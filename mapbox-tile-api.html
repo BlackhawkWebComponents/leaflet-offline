@@ -1,0 +1,255 @@
+<link rel="import" href="../polymer/polymer.html">
+<link rel="import" href="../core-ajax/core-ajax.html">
+<link rel="import" href="tile-storage.html">
+
+<!--
+Element providing tile layer for offline leaflet map support
+
+Element wrapping code from https://github.com/tbicr/OfflineMap
+MIT License
+
+##### Example
+
+    <leaflet-offline-tile-api
+            url="http://{s}.tiles.mapbox.com/v3/rbeers.j1mhej3b/{z}/{x}/{y}.png" noWrap>
+    </leaflet-offline-tile-api>
+
+@element leaflet-offline-tile-api
+@blurb Element providing ..
+@status alpha
+@url http://blackhawkwebcomponents.github.io/leaflet-offline-tile-api
+-->
+<polymer-element name="mapbox-tile-api" hidden attributes="rootUrl tileJsonUrl tileCount downloadSize">
+<template>
+    <core-ajax auto
+               handleAs="json"
+               url="{{tileJsonUrl}}"
+               on-core-response="{{gotTileJson}}"></core-ajax>
+    <tile-storage storage="{{storage}}"></tile-storage>
+</template>
+<script>
+
+
+    Polymer({
+        downloading: false,
+        publish: {
+            mapid:null,
+            version:'4',
+            format:'png',
+            retina:false,
+            accessToken:null,
+            secure:false,
+            tileJson:{},
+            bounds:null,
+            zoom:null,
+            maxZoom:null,
+            avgTileSize:10240
+        },
+        computed: {
+            rootUrl: 'genRootUrl(mapid,secure,version)',
+            tileJsonUrl: 'genTileJsonUrl(rootUrl,secure,accessToken)',
+            tileCount: 'calculateTileCount(bounds,zoom,maxZoom)',
+            downloadSize: 'calculateDownloadSize(tileCount,avgTileSize)'
+        },
+        genRootUrl: function(mapid,secure,version) {
+            return 'http' + (secure?'s':'') + '://api.tiles.mapbox.com/v' + version + '/' + mapid;
+        },
+        genTileJsonUrl: function(rootUrl,secure,accessToken) {
+            return rootUrl + '.json?' + (secure?'secure':'') + '&access_token=' + accessToken;
+        },
+        gotTileJson: function(event, response) {
+            this.tileJson = response.response;
+            this.fire('mapbox-api-ready');
+        },
+        calculateTileCount: function(bounds, zoom, maxZoom) {
+            if (bounds && zoom) {
+                var tiles = this.xyz(bounds, zoom, maxZoom);
+                return tiles.length;
+            } else {
+                return 0;
+            }
+        },
+        calculateDownloadSize: function(tileCount, avgTileSize) {
+            return filesize(tileCount*avgTileSize);
+        },
+        download: function() {
+            if (this.storage && !this.downloading) {
+                this.downloading = true;
+
+                this.tiles = this.xyz(this.bounds, this.zoom, this.maxZoom);
+
+                //TODO: set download counter and total size tracker
+
+                for (var i = 0; i < this.tiles.length; ++i) {
+                    //TODO: make this async
+                    this.downloadTile(this.tiles[i]);
+                }
+            }
+        },
+        downloadTile: function(tile) {
+
+            //TODO: set state
+            tile.url = this.rootUrl + '/' + tile.z + '/' + tile.x + '/' + tile.y + '.' + this.format +
+                '?access_token=' + this.accessToken;
+
+            console.log('downloading tile: ' + tile.url);
+
+            var xhr = new XMLHttpRequest(),
+                    fileReader = new FileReader();
+
+            xhr.open('GET', tile.url, true);
+            xhr.responseType = 'blob';
+            var self = this;
+            xhr.addEventListener("load", function () {
+                if (xhr.status === 200) {
+                    // onload needed since Google Chrome doesn't support addEventListener for FileReader
+                    fileReader.onload = function (evt) {
+                        // Read out file contents as a Data URL
+                        var result = evt.target.result;
+                        //console.log('filereader result: ', result);
+                        //TODO: pass tile as object, update state here, also update total counter and size
+                        self.saveTile(tile.x, tile.y, tile.z, result);
+                    };
+                    // Load blob as Data URL
+                    fileReader.readAsDataURL(xhr.response);
+                }
+            }, false);
+
+            xhr.send();
+        },
+        saveTile: function(x, y, z, dataurl) {
+            //TODO: set key up above and pass tile into this
+            var key = z + ',' + y + ',' + x;
+            console.log('saving tile with key: ' + key);
+            //TODO: add callback so we know if it completed
+            this.storage.add(key, dataurl);
+        },
+        pyramid: function(mapIDs, lat, lon, options) {
+            /*
+             Given a list of mapIDs, a central lat/lng, and zoomLimit/radius options
+             generate the urls for the pyramid of tiles for zoom levels 3-17
+
+             radius is how many tiles from the center at zoomLimit
+             (by default
+             zooms 3-14 have radius of 1.
+             15 has radius 2
+             16 has radius 4.
+             17 has radius 8
+             )
+             */
+
+            //handle options
+            var zoomLimit = options['zoomLimit'] || 14;
+            var minZoom = options['minZoom'] || 3;
+            var maxZoom = options['maxZoom'] || 17;
+            var radius = options['radius'] || 1;
+
+            //declare vars outside of loop
+            var urls = [], mapID, zoom, t_x, t_y, r, x, y;
+
+            for (var i = 0, l = mapIDs.length; i < l; i++) { //iterate over map ids
+                mapID = mapIDs[i];
+                for (zoom = minZoom; zoom < maxZoom; zoom++) { //iterate over zoom levels
+                    t_x = this.long2tile(lon, zoom);
+                    t_y = this.lat2tile(lat, zoom);
+                    r = radius * Math.pow(2, (Math.max(zoom, zoomLimit) - zoomLimit));
+                    for (x = t_x - r; x <= t_x + r; x++) { //iterate over x's
+                        for (y = t_y - r; y <= t_y + r; y++) { //iterate over y's
+                            //urls.push(tile2url(mapID, zoom, x, y));
+                            urls.push({"x":x,"y":y,"z":zoom});
+                        }
+                    }
+                }
+            }
+            return urls;
+        },
+        tile2url: function(mapID, zoom, x, y) {
+            /*  Given a mapID, zoom, tile_x, and tile_y,
+             *  return the url of that tile
+             */
+            return 'http://api.tiles.mapbox.com/v3/'
+                    + mapID + '/' + zoom + '/'
+                    + x + '/' + y + '.png';
+        },
+        //both from http://wiki.openstreetmap.org/wiki/Slippy_map_tilenames#ECMAScript_.28JavaScript.2FActionScript.2C_etc..29
+        long2tile: function(lon, zoom) {
+            return (Math.floor((lon + 180) / 360 * Math.pow(2, zoom)));
+        },
+        lat2tile: function(lat, zoom) {
+            return (Math.floor(
+                    (1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * Math.pow(2, zoom)
+            ));
+        },
+
+
+        /** Taken from https://github.com/veltman/xyz-affair **/
+        xyz: function(bounds, minZoom, maxZoom) {
+            var min,max,tiles = [];
+            if (!maxZoom) {
+                max = min = minZoom;
+            } else if (maxZoom < minZoom) {
+                min = maxZoom;
+                max = minZoom;
+            } else {
+                min = minZoom;
+                max = maxZoom;
+            }
+            for (var z = min; z <= max; z++) {
+                tiles = tiles.concat(this.xyzTiles(bounds,z));
+            }
+            return tiles;
+        },
+
+        /* Adapted from: https://gist.github.com/mourner/8825883 */
+        xyzTiles: function(bounds, zoom) {
+
+            var min = this.project(bounds[1][1],bounds[0][0], zoom), //north,west
+                max = this.project(bounds[0][1],bounds[1][0], zoom), //south,east
+                tiles = [];
+
+            for (var x = min.x; x <= max.x; x++) {
+                for (var y = min.y; y <= max.y; y++) {
+                    tiles.push({
+                        x: x,
+                        y: y,
+                        z: zoom
+                    });
+                }
+            }
+            return tiles;
+        },
+        project: function(lat,lng,zoom) {
+            var d = Math.PI / 180,
+                    max = 1 - 1E-15,
+                    sin = Math.max(Math.min(Math.sin(lat * d), max), -max),
+                    scale = 256 * Math.pow(2, zoom);
+
+            var point = {
+                x: R * lng * d,
+                y: R * Math.log((1 + sin) / (1 - sin)) / 2
+            };
+
+            point.x = this.tiled(scale * (sphericalScale * point.x + 0.5));
+            point.y = this.tiled(scale * (-sphericalScale * point.y + 0.5));
+
+            return point;
+        },
+        tiled: function(num) {
+            return Math.floor(num/256);
+        }
+
+    });
+
+    var R = 6378137,
+    sphericalScale = 0.5 / (Math.PI * R);
+
+    // filesize.js
+    /*
+     2015 Jason Mulligan
+     @version 3.0.1
+     */
+    !function(a){"use strict";function b(a,b){var e,f,g,h,i,j,k,l,m,n,o,p=[],q=!1,r=0;if(isNaN(a))throw new Error("Invalid arguments");return b=b||{},g=b.bits===!0,m=b.unix===!0,f=void 0!==b.base?b.base:2,l=void 0!==b.round?b.round:m?1:2,n=void 0!==b.spacer?b.spacer:m?"":" ",o=void 0!==b.suffixes?b.suffixes:{},k=void 0!==b.output?b.output:"string",e=void 0!==b.exponent?b.exponent:-1,j=Number(a),i=0>j,h=f>2?1e3:1024,i&&(j=-j),0===j?(p[0]=0,p[1]=m?"":"B"):((-1===e||isNaN(e))&&(e=Math.floor(Math.log(j)/Math.log(1e3))),e>8&&(r=1e3*r*(e-8),e=8),r=2===f?j/Math.pow(2,10*e):j/Math.pow(1e3,e),g&&(r=8*r,r>h&&(r/=h,e++)),p[0]=Number(r.toFixed(e>0?l:0)),p[1]=d[g?"bits":"bytes"][e],!q&&m&&(g&&c.test(p[1])&&(p[1]=p[1].toLowerCase()),p[1]=p[1].charAt(0),"B"===p[1]?(p[0]=Math.floor(p[0]),p[1]=""):g||"k"!==p[1]||(p[1]="K"))),i&&(p[0]=-p[0]),p[1]=o[p[1]]||p[1],"array"===k?p:"object"===k?{value:p[0],suffix:p[1]}:p.join(n)}var c=/b$/,d={bits:["B","kb","Mb","Gb","Tb","Pb","Eb","Zb","Yb"],bytes:["B","kB","MB","GB","TB","PB","EB","ZB","YB"]};"undefined"!=typeof exports?module.exports=b:"function"==typeof define?define(function(){return b}):a.filesize=b}(this);
+
+</script>
+</polymer-element>
+

@@ -1,0 +1,32 @@
+{
+  "attribution": "<a href='https://www.mapbox.com/about/maps/' target='_blank'>&copy; Mapbox &copy; OpenStreetMap</a> <a class='mapbox-improve-map' href='https://www.mapbox.com/map-feedback/' target='_blank'>Improve this map</a>",
+  "autoscale": true,
+  "bounds": [
+    -180,
+    -85.0511,
+    180,
+    85.0511
+  ],
+  "center": [
+    0,
+    20,
+    2
+  ],
+  "description": "",
+  "filesize": 0,
+  "format": "png8:m=h:c=128",
+  "id": "mapbox.outdoors",
+  "mapbox_logo": true,
+  "maxzoom": 21,
+  "minzoom": 0,
+  "name": "Mapbox Outdoors",
+  "private": false,
+  "scheme": "xyz",
+  "source": "mapbox:///mapbox.mapbox-terrain-v2,mapbox.mapbox-streets-v5",
+  "tilejson": "2.0.0",
+  "tiles": [
+    "http://a.tiles.mapbox.com/v4/mapbox.outdoors/{z}/{x}/{y}.png?access_token=pk.eyJ1IjoicmJlZXJzIiwiYSI6Im9sb3RJZEEifQ.mlFL4Rbyy3dcLgu-a1rNzg",
+    "http://b.tiles.mapbox.com/v4/mapbox.outdoors/{z}/{x}/{y}.png?access_token=pk.eyJ1IjoicmJlZXJzIiwiYSI6Im9sb3RJZEEifQ.mlFL4Rbyy3dcLgu-a1rNzg"
+  ],
+  "webpage": "http://a.tiles.mapbox.com/v4/mapbox.outdoors/page.html?access_token=pk.eyJ1IjoicmJlZXJzIiwiYSI6Im9sb3RJZEEifQ.mlFL4Rbyy3dcLgu-a1rNzg"
+}
